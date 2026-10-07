@@ -27,7 +27,7 @@ flowchart TD
         subgraph Data["Data & Streaming Layer"]
             Producer["📝 Log Generator<br>(Mock/Sample Data)"]
             Kafka["⚡ Kafka / Redpanda<br>(Log Stream)"]:::db
-            MinIO["🪣 MinIO<br>(Raw Parquet Storage)"]:::db
+            MinIO["🗄️ MinIO<br>(Raw Parquet Storage)"]:::db
             Postgres["🐘 PostgreSQL<br>(Structured Analytics DB)"]:::db
             Qdrant["🎯 Qdrant<br>(Vector DB for RAG)"]:::db
             
