@@ -15,14 +15,14 @@ flowchart TD
 
     %% Host Machine Layer
     subgraph Host["Host PC (Windows)"]
-        Ollama["🧠 Ollama Server<br>(Port 11434)"]:::host
+        Ollama["🧠 Ollama Server"]:::host
         Models["📦 Local LLMs"]:::host
         Ollama <-->|Loads/Unloads| Models
     end
 
     %% Kubernetes Cluster Layer
     subgraph K8s["Kubernetes Cluster (Kind)"]
-        UI["💻 Streamlit Chat UI<br>(Port 8501)"]:::ui
+        UI["💻 Streamlit Chat UI"]:::ui
         
         subgraph Data["Data & Streaming Layer"]
             Producer["📝 Log Generator<br>(Mock/Sample Data)"]
