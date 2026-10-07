@@ -37,7 +37,12 @@ flowchart TD
         end
 
         subgraph Orchestration["ETL Pipelines"]
+            BronzeWorker["👷 Bronze Worker<br>(Kafka to MinIO)"]
             Airflow["⚙️ Apache Airflow DAGs<br>(Bronze to Silver)"]
+            
+            BronzeWorker -->|Reads Stream| Kafka
+            BronzeWorker -->|Writes Parquet| MinIO
+            
             Airflow -->|Reads| MinIO
             Airflow -->|Writes| Postgres
             Airflow -->|Embeds & Indexes| Qdrant
