@@ -1,6 +1,6 @@
 # Dual-System Agents
 
-This project demonstrates a Dual-System architecture inspired by human cognition (System 1 / System 2), applied to autonomous cluster management and natural language ops.
+A Dual-System cognitive agent architecture for cluster observability: **System 1** provides fast anomaly detection over real-time log streams, while **System 2** handles deep log retrieval, analytical SQL querying, and guided cluster remediation.
 
 ## Architecture
 
