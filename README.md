@@ -13,64 +13,54 @@ flowchart TD
     classDef ui fill:#ff4b4b,stroke:#fff,stroke-width:2px,color:#fff;
     classDef agent fill:#f4b400,stroke:#fff,stroke-width:2px,color:#fff,font-weight:bold;
 
-    %% Host Machine Layer
-    subgraph Host["Host PC (Windows)"]
-        Ollama["🧠 Ollama Server"]:::host
-        Models["📦 Local LLMs"]:::host
-        Ollama <-->|Loads/Unloads| Models
-    end
-
-    %% Kubernetes Cluster Layer
     subgraph K8s["Kubernetes Cluster (Kind)"]
         UI["💻 Streamlit Chat UI"]:::ui
         
+        subgraph Agents["Dual-System Agent API"]
+            AgentAPI["🤖 FastAPI Service<br>(agent-api)"]:::agent
+            Sys1["System 1 (Watchdog)<br>Model: Qwen 0.5B<br>Fast, Reactive"]:::agent
+            Sys2["System 2 (Chat/RAG)<br>Model: Qwen 7B<br>Slow, Analytical"]:::agent
+        end
+        
+        subgraph Orchestration["ETL Pipelines"]
+            BronzeWorker["👷 Bronze Worker<br>(Kafka to MinIO)"]
+            Airflow["⚙️ Apache Airflow DAGs<br>(Bronze to Silver)"]
+        end
+
         subgraph Data["Data & Streaming Layer"]
             Producer["📝 Log Generator<br>(Mock/Sample Data)"]
             Kafka["⚡ Kafka / Redpanda<br>(Log Stream)"]:::db
             MinIO["🗄️ MinIO<br>(Raw Parquet Storage)"]:::db
             Postgres["🐘 PostgreSQL<br>(Structured Analytics DB)"]:::db
             Qdrant["🎯 Qdrant<br>(Vector DB for RAG)"]:::db
-            
-            Producer -->|Produces Logs| Kafka
-            
-            %% Layout hints: Qdrant top-left, Postgres below it, Kafka at bottom, MinIO top-right
-            Qdrant ~~~ MinIO
-            Qdrant ~~~ Postgres
-            Postgres ~~~ Kafka
         end
+    end
 
-        subgraph Orchestration["ETL Pipelines"]
-            BronzeWorker["👷 Bronze Worker<br>(Kafka to MinIO)"]
-            Airflow["⚙️ Apache Airflow DAGs<br>(Bronze to Silver)"]
-            
-            BronzeWorker -->|Reads Stream| Kafka
-            BronzeWorker -->|Writes Parquet| MinIO
-            
-            Airflow -->|Reads| MinIO
-            Airflow -->|Writes| Postgres
-            Airflow -->|Embeds & Indexes| Qdrant
-        end
-
-        subgraph Agents["Dual-System Agent API"]
-            AgentAPI["🤖 FastAPI Service<br>(agent-api)"]:::agent
-            
-            Sys1["System 1 (Watchdog)<br>Model: Qwen 0.5B<br>Fast, Reactive"]:::agent
-            Sys2["System 2 (Chat/RAG)<br>Model: Qwen 7B<br>Slow, Analytical"]:::agent
-        end
-
+    subgraph Host["Host PC (Windows)"]
+        Ollama["🧠 Ollama Server"]:::host
+        Models["📦 Local LLMs"]:::host
     end
 
     %% Data Flow & Connections
-    Kafka -->|Consumes Logs| Sys1
-    Sys1 -->|Proposes Action| AgentAPI
-    
+    %% Interactions
     UI <-->|Queries & Approvals| AgentAPI
     AgentAPI <-->|Routes Queries| Sys2
-    
+    Sys1 -->|Proposes Action| AgentAPI
+    AgentAPI <-->|HTTP Requests| Ollama
+    Ollama <-->|Loads/Unloads| Models
     Sys2 <-->|Vector Search| Qdrant
     Sys2 <-->|Executes SQL| Postgres
+
+    %% Pipeline Data Flow
+    Producer -->|Produces Logs| Kafka
+    Kafka -->|Streams Logs| Sys1
     
-    AgentAPI <-->|HTTP Requests| Ollama
+    Kafka -->|Streams Logs| BronzeWorker
+    BronzeWorker -->|Writes Parquet| MinIO
+    
+    MinIO -->|Batch Reads| Airflow
+    Airflow -->|Writes Structured| Postgres
+    Airflow -->|Embeds & Indexes| Qdrant
 ```
 
 *   **System 1 (Watchdog):** A small, fast, low-latency agent (`qwen2.5:0.5b`) continuously monitoring Kafka event streams (e.g., system logs). It identifies anomalies and proposes remediation actions, adding them to a Human-In-The-Loop (HITL) approval queue.
