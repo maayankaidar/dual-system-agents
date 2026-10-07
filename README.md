@@ -25,10 +25,13 @@ flowchart TD
         UI["💻 Streamlit Chat UI<br>(Port 8501)"]:::ui
         
         subgraph Data["Data & Streaming Layer"]
-            Qdrant["🎯 Qdrant<br>(Vector DB for RAG)"]:::db
+            Producer["📝 Log Generator<br>(Mock/Sample Data)"]
+            Kafka["⚡ Kafka / Redpanda<br>(Log Stream)"]:::db
             MinIO["🪣 MinIO<br>(Raw Parquet Storage)"]:::db
             Postgres["🐘 PostgreSQL<br>(Structured Analytics DB)"]:::db
-            Kafka["⚡ Kafka / Redpanda<br>(Log Stream)"]:::db
+            Qdrant["🎯 Qdrant<br>(Vector DB for RAG)"]:::db
+            
+            Producer -->|Produces Logs| Kafka
             
             %% Layout hints: Qdrant top-left, Postgres below it, Kafka at bottom, MinIO top-right
             Qdrant ~~~ MinIO
