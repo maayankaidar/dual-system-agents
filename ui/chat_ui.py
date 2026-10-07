@@ -1,7 +1,7 @@
 import streamlit as st
 import requests
 import os
-AGENT_API_URL = os.getenv("AGENT_API_URL", f"{AGENT_API_URL}")
+AGENT_API_URL = os.getenv("AGENT_API_URL", "http://localhost:8000")
 
 st.set_page_config(page_title="Dual-System Agents", page_icon="🤖")
 
@@ -27,7 +27,7 @@ with st.sidebar:
                     col1, col2 = st.columns(2)
                     with col1:
                         if st.button("✅ Approve", key=f"approve_{uid}"):
-                            app_res = requests.post(ff"{AGENT_API_URL}/agent/approve/{uid}")
+                            app_res = requests.post(f"{AGENT_API_URL}/agent/approve/{uid}")
                             if app_res.status_code == 200 and "error" not in app_res.json():
                                 st.success("Action Approved!")
                             else:
@@ -35,7 +35,7 @@ with st.sidebar:
                             st.rerun()
                     with col2:
                         if st.button("❌ Reject", key=f"reject_{uid}"):
-                            requests.post(ff"{AGENT_API_URL}/agent/reject/{uid}")
+                            requests.post(f"{AGENT_API_URL}/agent/reject/{uid}")
                             st.rerun()
     except requests.exceptions.ConnectionError:
         st.error("Cannot connect to API.")
