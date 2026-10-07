@@ -56,9 +56,6 @@ flowchart TD
             
             Sys1["System 1 (Watchdog)<br>Model: Qwen 0.5B<br>Fast, Reactive"]:::agent
             Sys2["System 2 (Chat/RAG)<br>Model: Qwen 7B<br>Slow, Analytical"]:::agent
-            
-            AgentAPI --- Sys1
-            AgentAPI --- Sys2
         end
 
     end
@@ -68,6 +65,8 @@ flowchart TD
     Sys1 -->|Proposes Action| AgentAPI
     
     UI <-->|Queries & Approvals| AgentAPI
+    AgentAPI <-->|Routes Queries| Sys2
+    
     Sys2 <-->|Vector Search| Qdrant
     Sys2 <-->|Executes SQL| Postgres
     
