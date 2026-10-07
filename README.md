@@ -40,6 +40,7 @@ flowchart TD
             Airflow["⚙️ Apache Airflow DAGs<br>(Bronze to Silver)"]
             Airflow -->|Reads| MinIO
             Airflow -->|Writes| Postgres
+            Airflow -->|Embeds & Indexes| Qdrant
         end
 
         subgraph Agents["Dual-System Agent API"]
