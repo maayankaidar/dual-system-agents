@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bronze-worker
+  namespace: lakehouse
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: bronze-worker
+  template:
+    metadata:
+      labels:
+        app: bronze-worker
+    spec:
+      containers:
+        - name: worker
+          image: bronze-worker:v5
+          imagePullPolicy: Never
+          env:
+            - name: KAFKA_BROKER
+              value: "kafka.streaming.svc.cluster.local:9092"
+            - name: MINIO_ENDPOINT
+              value: "http://minio.lakehouse.svc.cluster.local:9000"
+            - name: MINIO_ROOT_USER
+              value: "minioadmin"
+            - name: MINIO_ROOT_PASSWORD
+              value: "minioadmin"

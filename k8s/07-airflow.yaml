@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: airflow
+  namespace: lakehouse
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: airflow
+  template:
+    metadata:
+      labels:
+        app: airflow
+    spec:
+      containers:
+        - name: airflow
+          image: my-airflow:v2
+          imagePullPolicy: Never
+          # 'airflow standalone' runs the database, scheduler, and webserver in one container!
+          # Perfect for local learning and saving RAM.
+          command: ["airflow", "standalone"]
+          ports:
+            - containerPort: 8080
+          env:
+            - name: AIRFLOW__CORE__LOAD_EXAMPLES
+              value: "False"
+            - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
+              value: "postgresql+psycopg2://agent:agentpassword@postgres.lakehouse.svc.cluster.local:5432/analytical_db"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: airflow-webserver
+  namespace: lakehouse
+spec:
+  ports:
+    - port: 8080
+      targetPort: 8080
+  selector:
+    app: airflow

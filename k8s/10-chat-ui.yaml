@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chat-ui
+  namespace: lakehouse
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: chat-ui
+  template:
+    metadata:
+      labels:
+        app: chat-ui
+    spec:
+      containers:
+        - name: chat-ui
+          image: my-chat-ui:v1
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8501
+          env:
+            - name: AGENT_API_URL
+              value: "http://agent-api.lakehouse.svc.cluster.local:8000"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: chat-ui
+  namespace: lakehouse
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8501
+      targetPort: 8501
+  selector:
+    app: chat-ui
+

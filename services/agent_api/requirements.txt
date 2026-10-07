@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+pydantic
+ollama
+qdrant-client
+fastembed
+kubernetes
+kafka-python
+psycopg2-binary
