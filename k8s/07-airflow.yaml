@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: airflow
-          image: my-airflow:v2
+          image: my-airflow:latest
           imagePullPolicy: Never
           # 'airflow standalone' runs the database, scheduler, and webserver in one container!
           # Perfect for local learning and saving RAM.

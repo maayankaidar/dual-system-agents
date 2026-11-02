@@ -33,6 +33,9 @@ spec:
           ports:
             - containerPort: 9092
           env:
+            # Resource bounds
+            - name: KAFKA_HEAP_OPTS
+              value: "-Xmx384m -Xms384m"
             # KRaft configuration (No ZooKeeper required)
             - name: KAFKA_NODE_ID
               value: "1"

@@ -1,57 +1,124 @@
 import streamlit as st
 import requests
 import os
+import time
+from datetime import datetime
+
 AGENT_API_URL = os.getenv("AGENT_API_URL", "http://localhost:8000")
 
-st.set_page_config(page_title="Dual-System Agents", page_icon="🤖")
+st.set_page_config(page_title="Dual-System Agents", page_icon="🤖", layout="wide")
 
-# --- SIDEBAR: Watchdog Approvals ---
-with st.sidebar:
-    st.header("🛡️ Watchdog Approvals")
-    st.write("Pending autonomous actions:")
-    if st.button("Refresh Queue"):
-        pass
-    
-    try:
-        res = requests.get(f"{AGENT_API_URL}/agent/pending")
-        if res.status_code == 200:
-            pending = res.json()
-            if not pending:
-                st.success("No pending actions.")
-            for uid, decision in pending.items():
-                with st.expander(f"⚠️ Restart: {decision.get('target_service')}", expanded=True):
-                    st.write(f"**Agent:** {decision.get('agent', 'System 1 Watchdog (0.5B)')}")
-                    st.write(f"**Reason:** {decision.get('reason')}")
-                    st.write(f"**Trigger:** {decision.get('incident_description')}")
-                    
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        if st.button("✅ Approve", key=f"approve_{uid}"):
-                            app_res = requests.post(f"{AGENT_API_URL}/agent/approve/{uid}")
-                            if app_res.status_code == 200 and "error" not in app_res.json():
-                                st.success("Action Approved!")
-                            else:
-                                st.error(app_res.json().get("error", "Unknown error"))
-                            st.rerun()
-                    with col2:
-                        if st.button("❌ Reject", key=f"reject_{uid}"):
-                            requests.post(f"{AGENT_API_URL}/agent/reject/{uid}")
-                            st.rerun()
-    except requests.exceptions.ConnectionError:
-        st.error("Cannot connect to API.")
-
-# --- MAIN CHAT ---
-st.title("🤖 Dual-System Agents Chat")
-st.write("Talk to the AI agent. It can analyze logs, or fix the system if you ask it to 'restart' or 'fix' something.")
-
+# Initialize session state
 if "messages" not in st.session_state:
     st.session_state.messages = [{"role": "assistant", "content": "Hi! I'm monitoring the cluster. How can I help?"}]
 
+if "action_history" not in st.session_state:
+    st.session_state.action_history = []
+
+# Clean up any leftover HITL audit messages from previous sessions to keep chat pristine
+st.session_state.messages = [
+    m for m in st.session_state.messages
+    if "HITL Remediation" not in m.get("content", "") and "HITL Action" not in m.get("content", "")
+]
+
+# --- SIDEBAR: Watchdog Approvals & Action History ---
+with st.sidebar:
+    st.header("🛡️ Watchdog Approvals")
+    st.caption("⚡ Live Human-in-the-Loop queue (auto-syncs every 4s)")
+
+    @st.fragment(run_every=4)
+    def render_watchdog_queue():
+        col_hdr, col_btn = st.columns([2, 1])
+        with col_hdr:
+            st.write("**Pending Actions:**")
+        with col_btn:
+            if st.button("🔄 Sync", key="sync_queue_btn", help="Force immediate queue check"):
+                pass
+
+        try:
+            res = requests.get(f"{AGENT_API_URL}/agent/pending", timeout=3)
+            if res.status_code == 200:
+                pending = res.json()
+                if not pending:
+                    st.success("🟢 No pending incidents. All streams nominal.")
+                else:
+                    for uid, decision in list(pending.items()):
+                        target_svc = decision.get("target_service", "service")
+                        with st.expander(f"⚠️ Action: Restart `{target_svc}`", expanded=True):
+                            st.markdown(f"**Agent:** {decision.get('agent', 'System 1 Watchdog (Flash Lite)')}")
+                            st.markdown(f"**Reason:** {decision.get('reason')}")
+                            st.caption(f"**Trigger:** `{decision.get('incident_description')}`")
+
+                            c1, c2 = st.columns(2)
+                            with c1:
+                                if st.button("✅ Approve", key=f"approve_{uid}", use_container_width=True):
+                                    with st.spinner(f"Applying patch for `{target_svc}`..."):
+                                        app_res = requests.post(f"{AGENT_API_URL}/agent/approve/{uid}")
+                                        if app_res.status_code == 200 and "error" not in app_res.json():
+                                            resp_data = app_res.json()
+                                            details = resp_data.get("details", f"Rollout restart triggered on `{target_svc}`")
+                                            st.toast(f"✅ Approved: {details}", icon="🚀")
+                                            st.session_state.action_history.insert(0, {
+                                                "time": datetime.now().strftime("%H:%M:%S"),
+                                                "status": "approved",
+                                                "service": target_svc,
+                                                "details": details,
+                                                "reason": decision.get("reason", "")
+                                            })
+                                        else:
+                                            err = app_res.json().get("error", "Failed to apply remediation")
+                                            st.error(err)
+                                    time.sleep(0.3)
+                                    st.rerun()
+
+                            with c2:
+                                if st.button("❌ Reject", key=f"reject_{uid}", use_container_width=True):
+                                    requests.post(f"{AGENT_API_URL}/agent/reject/{uid}")
+                                    st.toast(f"❌ Dismissed action for `{target_svc}`", icon="🛑")
+                                    st.session_state.action_history.insert(0, {
+                                        "time": datetime.now().strftime("%H:%M:%S"),
+                                        "status": "rejected",
+                                        "service": target_svc,
+                                        "details": f"Dismissed restart for {target_svc}.",
+                                        "reason": decision.get("reason", "")
+                                    })
+                                    time.sleep(0.3)
+                                    st.rerun()
+            else:
+                st.error("Failed to load queue from API.")
+        except requests.exceptions.ConnectionError:
+            st.error("Cannot connect to Agent API.")
+
+    render_watchdog_queue()
+
+    st.markdown("---")
+
+    # Collapsible Action History (Keeps main chat clean!)
+    with st.expander("📜 Remediation History", expanded=False):
+        if not st.session_state.action_history:
+            st.caption("No remediation actions taken yet.")
+        else:
+            for act in st.session_state.action_history:
+                icon = "✅ Approved" if act["status"] == "approved" else "🛑 Rejected"
+                st.markdown(f"**{icon}:** `{act['service']}` at `{act['time']}`")
+                st.caption(f"{act['details']}")
+                st.divider()
+
+    if st.button("🧹 Clear Chat History", use_container_width=True):
+        st.session_state.messages = [{"role": "assistant", "content": "Chat cleared. Cluster monitoring active. How can I help?"}]
+        st.rerun()
+
+# --- MAIN CHAT ---
+st.title("🤖 Dual-System Agents Chat")
+st.write("Ask questions about cluster logs, analyze anomalies, or request autonomous remediation.")
+
+# Render previous messages
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-if prompt := st.chat_input("Ask a question about logs, or tell me to 'restart log-generator'"):
+# Chat input
+if prompt := st.chat_input("Ask a question about logs, or tell me to 'restart order-service'"):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
@@ -60,30 +127,45 @@ if prompt := st.chat_input("Ask a question about logs, or tell me to 'restart lo
     is_action = any(kw in prompt.lower() for kw in action_keywords)
 
     with st.chat_message("assistant"):
-        with st.spinner("Agent is thinking..."):
+        with st.spinner("Analyzing cluster observability data..."):
             try:
                 if is_action:
                     res = requests.post(
-                        f"{AGENT_API_URL}/agent/remediate", 
-                        json={"incident_description": prompt, "target_namespace": "streaming"}
+                        f"{AGENT_API_URL}/agent/remediate",
+                        json={"incident_description": prompt, "target_namespace": "streaming"},
+                        timeout=15
                     )
                     if res.status_code == 200:
                         resp = res.json()
                         decision = resp.get("decision", {})
+                        agent_name = decision.get("agent", "System 2 Remediation Agent")
                         if resp.get("status") == "pending_approval":
-                            answer = f"**Agent:** {decision.get('agent', 'System 2 Chat (7B)')}\n\n**Recommendation:** `{decision.get('action')}` on `{decision.get('target_service')}`\n\n**Reasoning:** {decision.get('reason')}\n\n*Action added to Watchdog Queue in the sidebar for approval.*"
+                            answer = (
+                                f"**Agent:** {agent_name}\n\n"
+                                f"**Recommendation:** `{decision.get('action')}` on `{decision.get('target_service')}`\n\n"
+                                f"**Reasoning:** {decision.get('reason')}\n\n"
+                                f"👉 *Action placed into the **Watchdog Approvals** sidebar for Human-in-the-Loop review.*"
+                            )
                         else:
-                            answer = f"**Agent:** {decision.get('agent', 'System 2 Chat (7B)')}\n\n**Action taken:** `{decision.get('action')}` on `{decision.get('target_service')}`\n\n**Reasoning:** {decision.get('reason')}"
+                            answer = (
+                                f"**Agent:** {agent_name}\n\n"
+                                f"**Action Taken:** `{decision.get('action')}` on `{decision.get('target_service')}`\n\n"
+                                f"**Reasoning:** {decision.get('reason')}"
+                            )
                         st.markdown(answer)
                         st.session_state.messages.append({"role": "assistant", "content": answer})
                         st.rerun()
                     else:
                         st.error(f"Backend Error: {res.text}")
                 else:
-                    res = requests.post(f"{AGENT_API_URL}/agent/query", json={"question": prompt})
+                    res = requests.post(
+                        f"{AGENT_API_URL}/agent/query",
+                        json={"question": prompt},
+                        timeout=30
+                    )
                     if res.status_code == 200:
                         data = res.json()
-                        agent_name = data.get("agent", "System 2 Chat (7B)")
+                        agent_name = data.get("agent", "System 2 Chat")
                         answer_text = data.get("answer", "No answer found.")
                         answer = f"**Agent:** {agent_name}\n\n{answer_text}"
                         st.markdown(answer)
@@ -91,5 +173,4 @@ if prompt := st.chat_input("Ask a question about logs, or tell me to 'restart lo
                     else:
                         st.error(f"Backend Error: {res.text}")
             except requests.exceptions.ConnectionError:
-                st.error("⚠️ Cannot connect to the Agent API on localhost:8000. Please make sure you run: `kubectl port-forward svc/agent-api -n lakehouse 8000:8000` in another terminal.")
-
+                st.error("⚠️ Cannot connect to the Agent API on localhost:8000.")

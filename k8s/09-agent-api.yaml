@@ -44,10 +44,20 @@ spec:
       serviceAccountName: agent-sa
       containers:
         - name: agent-api
-          image: my-agent-api:v7
+          image: my-agent-api:latest
           imagePullPolicy: Never
           ports:
             - containerPort: 8000
+          env:
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: gemini-secret
+                  key: GEMINI_API_KEY
+            - name: SYSTEM_1_MODEL
+              value: "gemini-flash-lite-latest"
+            - name: SYSTEM_2_MODEL
+              value: "gemini-3.5-flash"
 ---
 apiVersion: v1
 kind: Service

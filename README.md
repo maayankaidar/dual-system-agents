@@ -63,17 +63,17 @@ flowchart TD
     Airflow -->|Embeds & Indexes| Qdrant
 ```
 
-*   **System 1 (Watchdog):** A small, fast, low-latency agent (`qwen2.5:0.5b`) continuously monitoring Kafka event streams (e.g., system logs). It identifies anomalies and proposes remediation actions, adding them to a Human-In-The-Loop (HITL) approval queue.
-*   **System 2 (Chat/RAG):** A larger, more capable agent (`qwen2.5:7b`) handling the interactive Streamlit UI. It answers complex user queries using Retrieval-Augmented Generation (RAG) against system logs and executes remediation actions when instructed or when HITL approvals are granted.
+*   **System 1 (Watchdog):** A fast, low-latency agent (`gemini-flash-lite-latest`) continuously monitoring Kafka event streams (e.g., system logs). It identifies anomalies and proposes remediation actions, adding them to a Human-In-The-Loop (HITL) approval queue.
+*   **System 2 (Chat/RAG):** An analytical agent (`gemini-3.8-flash`) handling the interactive Streamlit UI. It answers complex user queries using Retrieval-Augmented Generation (RAG) against system logs and SQL analytics, and executes remediation actions when instructed or when HITL approvals are granted.
 
 ## Features
 
-*   **Kafka Event Streaming:** Simulates a real-time log stream.
-*   **Vector Database (Qdrant):** Embeds and stores logs for RAG.
+*   **Kafka Event Streaming:** Simulates a real-time log stream using KRaft mode.
+*   **Vector Database (Qdrant):** Embeds and stores logs for semantic RAG search.
+*   **Analytical Storage (PostgreSQL & MinIO):** Structured analytical database and raw Parquet lakehouse storage with Airflow ETL.
 *   **Human-In-The-Loop (HITL):** Proposed actions by System 1 require user approval before execution.
-*   **Kubernetes (Kind):** The entire backend runs in a local Kubernetes cluster.
-*   **Local LLMs (Ollama):** Powered entirely by locally hosted models, ensuring privacy and zero API costs. 
-    * *Note on Architecture:* In this local setup, Ollama runs on the Host PC rather than inside the Kubernetes cluster. This is an intentional design choice for local development, as passing Windows Host GPUs into local Docker/Kubernetes containers is notoriously complex. In a production environment, the inference engine would be deployed directly onto GPU-enabled Kubernetes nodes.
+*   **Kubernetes (Kind):** Microservices orchestrated across `streaming` and `lakehouse` namespaces.
+*   **Gemini API Models:** Fast, intelligent reasoning with zero local model memory footprint.
 
 ## Components
 
@@ -86,13 +86,22 @@ flowchart TD
 
 ## Setup Instructions
 
-1.  **Prerequisites:** Docker, Kind, `kubectl`, Ollama.
-2.  **Pull Models:**
+1.  **Prerequisites:** Docker, Kind, `kubectl`.
+2.  **Configure API Key:**
+    Create a `.env` file in the project root:
     ```bash
-    ollama pull qwen2.5:7b
-    ollama pull qwen2.5:0.5b
-    ollama pull nomic-embed-text
+    echo "GEMINI_API_KEY=your_gemini_api_key" > .env
     ```
-3.  **Start Cluster:**
-    (Follow standard Kind cluster creation and deployment steps as defined in your workflow)
+3.  **Deploy Cluster:**
+    ```bash
+    ./deploy.sh
+    ```
+4.  **Access Services:**
+    - Streamlit Chat & HITL UI: `kubectl port-forward svc/chat-ui -n lakehouse 8501:8501` -> [http://localhost:8501](http://localhost:8501)
+    - Agent API: `kubectl port-forward svc/agent-api -n lakehouse 8000:8000` -> [http://localhost:8000/docs](http://localhost:8000/docs)
+    - Airflow Webserver: `kubectl port-forward svc/airflow-webserver -n lakehouse 8080:8080` -> [http://localhost:8080](http://localhost:8080)
+5.  **Teardown:**
+    ```bash
+    ./teardown.sh
+    ```
 

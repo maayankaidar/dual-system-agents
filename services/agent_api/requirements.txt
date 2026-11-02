@@ -1,7 +1,7 @@
 fastapi
 uvicorn
 pydantic
-ollama
+google-genai
 qdrant-client
 fastembed
 kubernetes
