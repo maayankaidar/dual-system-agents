@@ -88,9 +88,11 @@ kubectl apply -f k8s/07-airflow.yaml
 kubectl apply -f k8s/09-agent-api.yaml
 kubectl apply -f k8s/10-chat-ui.yaml
 
-# 7. Initialize Airflow ETL DAG
-echo "Waiting for Airflow readiness to initialize ETL pipeline..."
+# 7. Initialize Airflow ETL DAG and Credentials
+echo "Waiting for Airflow readiness..."
 kubectl rollout status deployment/airflow -n lakehouse --timeout=120s || true
+echo "Configuring Airflow admin credentials and unpausing ETL DAG..."
+kubectl exec deployment/airflow -n lakehouse -- airflow users reset-password -u admin -p admin || true
 kubectl exec deployment/airflow -n lakehouse -- airflow dags unpause bronze_to_silver_etl || true
 
 echo ""

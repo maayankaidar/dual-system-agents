@@ -18,8 +18,20 @@ spec:
           image: my-airflow:latest
           imagePullPolicy: Never
           # 'airflow standalone' runs the database, scheduler, and webserver in one container!
-          # Perfect for local learning and saving RAM.
-          command: ["airflow", "standalone"]
+          # Script ensures admin/admin user is created/reset deterministically on startup.
+          command:
+            - "bash"
+            - "-c"
+            - |
+              airflow standalone &
+              pid=$!
+              echo "Waiting for Airflow DB initialization..."
+              while ! airflow db check >/dev/null 2>&1; do
+                sleep 2
+              done
+              echo "Ensuring deterministic admin/admin credentials..."
+              airflow users create -u admin -p admin -f Admin -l User -r Admin -e admin@example.com 2>/dev/null || airflow users reset-password -u admin -p admin
+              wait $pid
           ports:
             - containerPort: 8080
           env:
