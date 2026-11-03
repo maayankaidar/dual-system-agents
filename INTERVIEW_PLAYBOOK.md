@@ -74,6 +74,19 @@ flowchart TD
 
 ---
 
+## Cluster Namespaces & Isolation Strategy
+
+The cluster is intentionally divided into two logical namespaces:
+* **`streaming`:** Houses real-time high-throughput message ingestion (`kafka-0`, `log-generator`).
+* **`lakehouse`:** Houses the analytical data platform and AI services (`postgres-0`, `minio-0`, `airflow`, `qdrant-0`, `agent-api`, `chat-ui`).
+
+### Why this design matters in an interview:
+1. **Production-Grade Separation of Concerns:** Isolates volatile, high-throughput log traffic from stateful databases and analytical services.
+2. **Explicit Cross-Namespace DNS Routing:** Demonstrates microservices networking across namespaces using standard Kubernetes FQDNs (e.g., `kafka.streaming.svc.cluster.local:9092`).
+3. **Least-Privilege RBAC Security:** The `agent-api` pod runs with a dedicated `ServiceAccount` and `ClusterRoleBinding` that restricts remediation patching permissions specifically to target deployments in the `streaming` namespace.
+
+---
+
 ## Component Breakdown
 
 ### 1. Ingestion & Streaming Layer (`streaming` namespace)
@@ -109,6 +122,29 @@ flowchart TD
   * **Main Chat:** Conversational workspace with System 2 for deep log investigations.
   * **Live Watchdog Sidebar:** Real-time auto-syncing queue using `@st.fragment(run_every=4)` that displays incoming System 1 recommendations with Approve / Reject buttons.
   * **Collapsible Remediation History:** Timestamped audit log of all human approvals/rejections kept tucked away in the sidebar to prevent chat clutter.
+
+### 5. Execution Pipeline: Who Physically Runs the YAMLs?
+
+A common interview question: *"What is the chain of execution from a YAML file to a running container?"*
+
+```
+deploy.sh  ──▶  kubectl apply  ──(HTTP/REST)──▶  kube-apiserver  ──▶  etcd (Store Desired State)
+                                                        │
+                                                        ▼
+                                             Kube Controller & Scheduler
+                                                        │
+                                                        ▼ (Assign to node)
+                                               kubelet (Node Agent)
+                                                        │
+                                                        ▼ (CRI: Container Runtime Interface)
+                                              containerd (Spins up containers)
+```
+
+1. **`deploy.sh`:** Automation bash wrapper that verifies prerequisites, injects secrets, loads local images into Kind, and triggers `kubectl apply -f k8s/`.
+2. **`kubectl`:** The CLI client that converts declarative YAML manifests into structured JSON payloads and sends them to the Kubernetes API over HTTPS.
+3. **`kube-apiserver` (Control Plane):** Validates and writes the cluster's desired state into **`etcd`** (the cluster's single source of truth).
+4. **`kube-scheduler` & Controllers:** Detect the new desired state, resolve dependencies, and assign pods to nodes.
+5. **`kubelet` & `containerd`:** The node's worker agent (`kubelet`) receives the pod specification and commands the container runtime (`containerd` inside the Kind node) to physically unpack the image, isolate cgroups/namespaces, and run the container processes.
 
 ---
 
@@ -204,3 +240,4 @@ When the demo is over and you want to shut down all cluster resources:
 ./teardown.sh
 ```
 This cleanly removes the Kind cluster and returns 100% of your RAM and CPU back to your machine.
+
