@@ -133,7 +133,7 @@ if prompt := st.chat_input("Ask a question about logs, or tell me to 'restart or
                     res = requests.post(
                         f"{AGENT_API_URL}/agent/remediate",
                         json={"incident_description": prompt, "target_namespace": "streaming"},
-                        timeout=15
+                        timeout=60
                     )
                     if res.status_code == 200:
                         resp = res.json()
@@ -161,7 +161,7 @@ if prompt := st.chat_input("Ask a question about logs, or tell me to 'restart or
                     res = requests.post(
                         f"{AGENT_API_URL}/agent/query",
                         json={"question": prompt},
-                        timeout=30
+                        timeout=120
                     )
                     if res.status_code == 200:
                         data = res.json()
@@ -172,5 +172,9 @@ if prompt := st.chat_input("Ask a question about logs, or tell me to 'restart or
                         st.session_state.messages.append({"role": "assistant", "content": answer})
                     else:
                         st.error(f"Backend Error: {res.text}")
+            except requests.exceptions.Timeout:
+                st.error("⏳ Request timed out while waiting for agent analysis. Please try again.")
             except requests.exceptions.ConnectionError:
                 st.error("⚠️ Cannot connect to the Agent API on localhost:8000.")
+            except Exception as e:
+                st.error(f"⚠️ Error: {e}")

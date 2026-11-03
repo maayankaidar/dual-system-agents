@@ -57,7 +57,7 @@ spec:
             - name: SYSTEM_1_MODEL
               value: "gemini-flash-lite-latest"
             - name: SYSTEM_2_MODEL
-              value: "gemini-3.5-flash"
+              value: "gemini-flash-lite-latest"
 ---
 apiVersion: v1
 kind: Service

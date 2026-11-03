@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from qdrant_client import QdrantClient
 
 SYSTEM_1_MODEL = os.getenv("SYSTEM_1_MODEL", "gemini-flash-lite-latest")
-SYSTEM_2_MODEL = os.getenv("SYSTEM_2_MODEL", "gemini-3.5-flash")
+SYSTEM_2_MODEL = os.getenv("SYSTEM_2_MODEL", "gemini-flash-lite-latest")
 
 app = FastAPI()
 client_ai = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
@@ -60,7 +60,7 @@ def call_gemini(model: str, **kwargs):
         return client_ai.models.generate_content(model=model, **kwargs)
     except Exception as e:
         if "503" in str(e) or "UNAVAILABLE" in str(e) or "NOT_FOUND" in str(e):
-            fallback_model = "gemini-3.5-flash"
+            fallback_model = "gemini-3.5-flash-lite"
             print(f"[Gemini] Model {model} unavailable. Retrying with {fallback_model}...")
             return client_ai.models.generate_content(model=fallback_model, **kwargs)
         raise
@@ -150,7 +150,7 @@ def query(req: Question):
     except Exception as e:
         print(f"[Query Error] {e}")
         try:
-            fallback = "gemini-flash-lite-latest"
+            fallback = "gemini-3.5-flash-lite"
             print(f"[Query Error] Retrying with fallback {fallback}...")
             chat = client_ai.chats.create(
                 model=fallback,
