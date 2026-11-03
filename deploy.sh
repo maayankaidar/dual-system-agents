@@ -88,6 +88,11 @@ kubectl apply -f k8s/07-airflow.yaml
 kubectl apply -f k8s/09-agent-api.yaml
 kubectl apply -f k8s/10-chat-ui.yaml
 
+# 7. Initialize Airflow ETL DAG
+echo "Waiting for Airflow readiness to initialize ETL pipeline..."
+kubectl rollout status deployment/airflow -n lakehouse --timeout=120s || true
+kubectl exec deployment/airflow -n lakehouse -- airflow dags unpause bronze_to_silver_etl || true
+
 echo ""
 echo "=== Deployment Submitted Successfully! ==="
 echo "Check pod status with:"

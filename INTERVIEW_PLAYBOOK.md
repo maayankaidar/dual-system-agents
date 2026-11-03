@@ -178,6 +178,15 @@ deploy.sh  ──▶  kubectl apply  ──(HTTP/REST)──▶  kube-apiserver 
   sg docker -c "kubectl exec deployment/agent-api -n lakehouse -- /opt/venv/bin/python -c \"from qdrant_client import QdrantClient; qc = QdrantClient(url='http://qdrant.lakehouse.svc.cluster.local:6333'); print('Points:', qc.count('system_logs'))\""
   ```
 
+  > [!TIP] **Troubleshooting: `ERROR: relation "system_events" does not exist`**
+  > The `system_events` table is **not** created by static SQL migrations. It is created dynamically by Pandas inside Airflow's `bronze_to_silver_etl` DAG (`df.to_sql("system_events")`) once `bronze-worker` writes the first batch of 50 logs to MinIO.
+  > If Check 2 throws this error on a newly deployed cluster, unpause and trigger Airflow manually:
+  > ```bash
+  > sg docker -c "kubectl exec deployment/airflow -n lakehouse -- airflow dags unpause bronze_to_silver_etl"
+  > sg docker -c "kubectl exec deployment/airflow -n lakehouse -- airflow dags trigger bronze_to_silver_etl"
+  > ```
+  > Wait ~10–15 seconds for the DAG run to finish, then re-run Check 2. (Once triggered, it runs automatically every 5 minutes).
+
 - [ ] **4. Open Port-Forwards**:
   In a separate terminal tab, start the UI port-forward:
   ```bash

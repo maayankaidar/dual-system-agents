@@ -25,6 +25,8 @@ spec:
           env:
             - name: AIRFLOW__CORE__LOAD_EXAMPLES
               value: "False"
+            - name: AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION
+              value: "False"
             - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
               value: "postgresql+psycopg2://agent:agentpassword@postgres.lakehouse.svc.cluster.local:5432/analytical_db"
 ---
