@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
 AGENT_API_URL = os.getenv("AGENT_API_URL", "http://localhost:8000")
@@ -14,6 +15,60 @@ if "messages" not in st.session_state:
 
 if "action_history" not in st.session_state:
     st.session_state.action_history = []
+
+if "chat_executor" not in st.session_state:
+    st.session_state.chat_executor = ThreadPoolExecutor(max_workers=2)
+
+if "pending_chat_future" not in st.session_state:
+    st.session_state.pending_chat_future = None
+
+
+def _execute_chat_query(prompt_text: str, is_action_req: bool):
+    """Runs in a background thread so sidebar Approve/Reject clicks never block or abort chat queries."""
+    try:
+        if is_action_req:
+            res = requests.post(
+                f"{AGENT_API_URL}/agent/remediate",
+                json={"incident_description": prompt_text, "target_namespace": "streaming"},
+                timeout=60,
+            )
+            if res.status_code == 200:
+                resp = res.json()
+                decision = resp.get("decision", {})
+                agent_name = decision.get("agent", "System 2 Remediation Agent")
+                if resp.get("status") == "pending_approval":
+                    answer = (
+                        f"**Agent:** {agent_name}\n\n"
+                        f"**Recommendation:** `{decision.get('action')}` on `{decision.get('target_service')}`\n\n"
+                        f"**Reasoning:** {decision.get('reason')}\n\n"
+                        f"👉 *Action placed into the **Watchdog Approvals** sidebar for Human-in-the-Loop review.*"
+                    )
+                else:
+                    answer = (
+                        f"**Agent:** {agent_name}\n\n"
+                        f"**Action Taken:** `{decision.get('action')}` on `{decision.get('target_service')}`\n\n"
+                        f"**Reasoning:** {decision.get('reason')}"
+                    )
+                return ("ok", answer)
+            return ("error", f"Backend Error: {res.text}")
+        else:
+            res = requests.post(
+                f"{AGENT_API_URL}/agent/query",
+                json={"question": prompt_text},
+                timeout=120,
+            )
+            if res.status_code == 200:
+                data = res.json()
+                agent_name = data.get("agent", "System 2 Chat")
+                answer_text = data.get("answer", "No answer found.")
+                return ("ok", f"**Agent:** {agent_name}\n\n{answer_text}")
+            return ("error", f"Backend Error: {res.text}")
+    except requests.exceptions.Timeout:
+        return ("error", "⏳ Request timed out while waiting for agent analysis. Please try again.")
+    except requests.exceptions.ConnectionError:
+        return ("error", "⚠️ Cannot connect to the Agent API on localhost:8000.")
+    except Exception as e:
+        return ("error", f"⚠️ Error: {e}")
 
 # Clean up any leftover HITL audit messages from previous sessions to keep chat pristine
 st.session_state.messages = [
@@ -105,6 +160,7 @@ with st.sidebar:
                 st.divider()
 
     if st.button("🧹 Clear Chat History", use_container_width=True):
+        st.session_state.pending_chat_future = None
         st.session_state.messages = [{"role": "assistant", "content": "Chat cleared. Cluster monitoring active. How can I help?"}]
         st.rerun()
 
@@ -117,7 +173,7 @@ for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-# Chat input
+# Chat input (non-blocking: submits to background thread so Watchdog sidebar works in parallel!)
 if prompt := st.chat_input("Ask a question about logs, or tell me to 'restart order-service'"):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
@@ -126,55 +182,23 @@ if prompt := st.chat_input("Ask a question about logs, or tell me to 'restart or
     action_keywords = ["restart", "fix", "remediate", "scale"]
     is_action = any(kw in prompt.lower() for kw in action_keywords)
 
-    with st.chat_message("assistant"):
-        with st.spinner("Analyzing cluster observability data..."):
-            try:
-                if is_action:
-                    res = requests.post(
-                        f"{AGENT_API_URL}/agent/remediate",
-                        json={"incident_description": prompt, "target_namespace": "streaming"},
-                        timeout=60
-                    )
-                    if res.status_code == 200:
-                        resp = res.json()
-                        decision = resp.get("decision", {})
-                        agent_name = decision.get("agent", "System 2 Remediation Agent")
-                        if resp.get("status") == "pending_approval":
-                            answer = (
-                                f"**Agent:** {agent_name}\n\n"
-                                f"**Recommendation:** `{decision.get('action')}` on `{decision.get('target_service')}`\n\n"
-                                f"**Reasoning:** {decision.get('reason')}\n\n"
-                                f"👉 *Action placed into the **Watchdog Approvals** sidebar for Human-in-the-Loop review.*"
-                            )
-                        else:
-                            answer = (
-                                f"**Agent:** {agent_name}\n\n"
-                                f"**Action Taken:** `{decision.get('action')}` on `{decision.get('target_service')}`\n\n"
-                                f"**Reasoning:** {decision.get('reason')}"
-                            )
-                        st.markdown(answer)
-                        st.session_state.messages.append({"role": "assistant", "content": answer})
-                        st.rerun()
-                    else:
-                        st.error(f"Backend Error: {res.text}")
-                else:
-                    res = requests.post(
-                        f"{AGENT_API_URL}/agent/query",
-                        json={"question": prompt},
-                        timeout=120
-                    )
-                    if res.status_code == 200:
-                        data = res.json()
-                        agent_name = data.get("agent", "System 2 Chat")
-                        answer_text = data.get("answer", "No answer found.")
-                        answer = f"**Agent:** {agent_name}\n\n{answer_text}"
-                        st.markdown(answer)
-                        st.session_state.messages.append({"role": "assistant", "content": answer})
-                    else:
-                        st.error(f"Backend Error: {res.text}")
-            except requests.exceptions.Timeout:
-                st.error("⏳ Request timed out while waiting for agent analysis. Please try again.")
-            except requests.exceptions.ConnectionError:
-                st.error("⚠️ Cannot connect to the Agent API on localhost:8000.")
-            except Exception as e:
-                st.error(f"⚠️ Error: {e}")
+    st.session_state.pending_chat_future = st.session_state.chat_executor.submit(
+        _execute_chat_query, prompt, is_action
+    )
+
+
+@st.fragment(run_every=1)
+def render_pending_chat():
+    future = st.session_state.get("pending_chat_future")
+    if future is not None:
+        if not future.done():
+            with st.chat_message("assistant"):
+                st.info("⏳ Analyzing cluster observability data... *(You can still Approve/Reject Watchdog actions in parallel!)*")
+        else:
+            status, payload = future.result()
+            st.session_state.pending_chat_future = None
+            st.session_state.messages.append({"role": "assistant", "content": payload})
+            st.rerun()
+
+
+render_pending_chat()

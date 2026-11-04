@@ -20,7 +20,10 @@ SYSTEM_1_MODEL = os.getenv("SYSTEM_1_MODEL", "gemini-flash-lite-latest")
 SYSTEM_2_MODEL = os.getenv("SYSTEM_2_MODEL", "gemini-3.5-flash")
 
 app = FastAPI()
-client_ai = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+client_ai = genai.Client(
+    api_key=os.getenv("GEMINI_API_KEY"),
+    http_options=types.HttpOptions(retry_options=types.HttpRetryOptions(attempts=1)),
+)
 qdrant = QdrantClient(url=os.getenv("QDRANT_URL", "http://qdrant.lakehouse.svc.cluster.local:6333"))
 embedder = TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
 
@@ -55,15 +58,18 @@ class Action(BaseModel):
 
 
 def call_gemini(model: str, **kwargs):
-    """Calls Gemini API with automatic fallback in case of transient 503 high demand spikes."""
-    try:
-        return client_ai.models.generate_content(model=model, **kwargs)
-    except Exception as e:
-        if "503" in str(e) or "UNAVAILABLE" in str(e) or "NOT_FOUND" in str(e):
-            fallback_model = "gemini-3.5-flash-lite"
-            print(f"[Gemini] Model {model} unavailable. Retrying with {fallback_model}...")
-            return client_ai.models.generate_content(model=fallback_model, **kwargs)
-        raise
+    """Calls Gemini API with immediate multi-model fallback in case of 503/429 spikes."""
+    models_to_try = [model] + [
+        m for m in ["gemini-flash-lite-latest", "gemini-3.5-flash-lite", "gemini-3.5-flash"] if m != model
+    ]
+    last_err = None
+    for m in models_to_try:
+        try:
+            return client_ai.models.generate_content(model=m, **kwargs)
+        except Exception as e:
+            last_err = e
+            print(f"[Gemini] Model {m} unavailable ({e}). Trying next fallback...", flush=True)
+    raise last_err
 
 
 def determine_action(incident_description: str, model: str) -> Action:
@@ -131,38 +137,40 @@ def search_logs(query: str) -> str:
 @app.post("/agent/query")
 def query(req: Question):
     prompt = (
-        "You are a helpful cluster observability agent. "
-        "You have access to tools: `search_logs` (vector search over unstructured logs) and `execute_sql` (run SQL queries over system_events table). "
-        "Use these tools whenever relevant to inspect logs, errors, or service statistics to answer the user's question accurately.\n\n"
+        "You are a fast, helpful cluster observability agent. "
+        "You have access to tools: `execute_sql` (run SQL queries over `system_events` table with columns: timestamp, service, level, status_code, response_time_ms, client_ip, message) "
+        "and `search_logs` (vector search over unstructured logs). "
+        "IMPORTANT: Gather all needed statistics, error counts, and messages in a SINGLE comprehensive `execute_sql` query (using GROUP BY or ORDER BY/LIMIT) "
+        "so you can answer accurately in one round without multiple sequential tool calls.\n\n"
         f"User Question: {req.question}"
     )
 
-    try:
-        chat = client_ai.chats.create(
-            model=SYSTEM_2_MODEL,
-            config=types.GenerateContentConfig(
+    models_to_try = [SYSTEM_2_MODEL] + [
+        m for m in ["gemini-flash-lite-latest", "gemini-3.5-flash-lite"] if m != SYSTEM_2_MODEL
+    ]
+    answer_text = None
+    last_err = None
+
+    for model_name in models_to_try:
+        try:
+            gen_cfg = types.GenerateContentConfig(
                 tools=[search_logs, execute_sql],
                 temperature=0.2,
-            ),
-        )
-        response = chat.send_message(prompt)
-        answer_text = response.text or "Completed analysis."
-    except Exception as e:
-        print(f"[Query Error] {e}")
-        try:
-            fallback = "gemini-3.5-flash-lite"
-            print(f"[Query Error] Retrying with fallback {fallback}...")
+                thinking_config=types.ThinkingConfig(thinking_budget=0) if "3.5-flash" in model_name and "lite" not in model_name else None,
+            )
             chat = client_ai.chats.create(
-                model=fallback,
-                config=types.GenerateContentConfig(
-                    tools=[search_logs, execute_sql],
-                    temperature=0.2,
-                ),
+                model=model_name,
+                config=gen_cfg,
             )
             response = chat.send_message(prompt)
             answer_text = response.text or "Completed analysis."
-        except Exception as err2:
-            answer_text = f"Unable to complete query analysis: {err2}"
+            break
+        except Exception as e:
+            last_err = e
+            print(f"[Query Error] Model {model_name} failed: {e}. Failing over immediately...", flush=True)
+
+    if answer_text is None:
+        answer_text = f"Unable to complete query analysis: {last_err}"
 
     return {"answer": answer_text, "context_used": [], "agent": f"System 2 Chat ({SYSTEM_2_MODEL})"}
 
@@ -230,13 +238,19 @@ def watchdog_task():
         for msg in consumer:
             log = msg.value
             if log.get("level") == "ERROR":
+                svc = log.get("service")
+                existing_services = {d.target_service for d in pending_approvals.values()}
+                if svc in existing_services or len(pending_approvals) >= 4:
+                    continue
                 # Watchdog sees an error and autonomously analyzes it using System 1
-                incident = f"Service {log.get('service')} threw an error: {log.get('message')}"
-                decision = determine_action(incident, SYSTEM_1_MODEL)
-                
-                if decision.action == "restart_pod":
-                    uid = str(uuid.uuid4())
-                    pending_approvals[uid] = decision
+                incident = f"Service {svc} threw an error: {log.get('message')}"
+                try:
+                    decision = determine_action(incident, SYSTEM_1_MODEL)
+                    if decision.action == "restart_pod":
+                        uid = str(uuid.uuid4())
+                        pending_approvals[uid] = decision
+                except Exception as err:
+                    print(f"Watchdog triage skipped: {err}", flush=True)
     except Exception as e:
         print(f"Watchdog error: {e}")
 
