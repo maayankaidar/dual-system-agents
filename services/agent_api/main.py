@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from qdrant_client import QdrantClient
 
 SYSTEM_1_MODEL = os.getenv("SYSTEM_1_MODEL", "gemini-flash-lite-latest")
-SYSTEM_2_MODEL = os.getenv("SYSTEM_2_MODEL", "gemini-flash-lite-latest")
+SYSTEM_2_MODEL = os.getenv("SYSTEM_2_MODEL", "gemini-3.5-flash")
 
 app = FastAPI()
 client_ai = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
