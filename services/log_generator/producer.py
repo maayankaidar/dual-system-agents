@@ -102,11 +102,9 @@ producer = KafkaProducer(
 
 print(f"Starting realistic log generator -> Kafka topic '{TOPIC}' at {KAFKA_BROKER}...")
 
-while True:
+def make_log_entry(force_level=None):
     service = random.choice(list(SCENARIOS.keys()))
-    
-    # 75% INFO, 15% WARN, 10% ERROR distribution
-    level = random.choices(["INFO", "WARN", "ERROR"], weights=[0.75, 0.15, 0.10])[0]
+    level = force_level or random.choices(["INFO", "WARN", "ERROR"], weights=[0.75, 0.15, 0.10])[0]
     
     if level == "INFO":
         status_code = random.choice([200, 200, 201])
@@ -131,7 +129,7 @@ while True:
         latency=latency_ms,
     )
 
-    log_entry = {
+    return {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "service": service,
         "level": level,
@@ -141,7 +139,18 @@ while True:
         "message": message,
     }
 
+# Seed an initial batch of 50 logs on startup so bronze-worker flushes immediately
+print("Seeding initial batch of 50 telemetry events...", flush=True)
+for i in range(50):
+    seed_level = "ERROR" if i in (10, 25, 40) else random.choices(["INFO", "WARN"], weights=[0.85, 0.15])[0]
+    entry = make_log_entry(force_level=seed_level)
+    producer.send(TOPIC, value=entry)
+producer.flush()
+print("Initial seed batch of 50 events flushed to Kafka.", flush=True)
+
+while True:
+    log_entry = make_log_entry()
     producer.send(TOPIC, value=log_entry)
-    print(f"Sent: [{level}] {service} - {status_code} ({latency_ms}ms) -> {message}", flush=True)
+    print(f"Sent: [{log_entry['level']}] {log_entry['service']} - {log_entry['status_code']} ({log_entry['response_time_ms']}ms) -> {log_entry['message']}", flush=True)
     
     time.sleep(5)

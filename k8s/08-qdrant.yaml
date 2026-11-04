@@ -28,7 +28,8 @@ spec:
     spec:
       containers:
         - name: qdrant
-          image: qdrant/qdrant:v1.11.0
+          image: my-qdrant:latest
+          imagePullPolicy: Never
           ports:
             - containerPort: 6333
             - containerPort: 6334

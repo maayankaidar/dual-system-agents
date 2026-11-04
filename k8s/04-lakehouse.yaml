@@ -37,7 +37,8 @@ spec:
     spec:
       containers:
         - name: minio
-          image: elestio/minio:latest
+          image: my-minio:latest
+          imagePullPolicy: Never
           args:
             - server
             - /data

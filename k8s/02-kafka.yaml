@@ -29,7 +29,8 @@ spec:
     spec:
       containers:
         - name: kafka
-          image: apache/kafka:3.7.0
+          image: my-kafka:latest
+          imagePullPolicy: Never
           ports:
             - containerPort: 9092
           env:

@@ -28,7 +28,8 @@ spec:
     spec:
       containers:
         - name: postgres
-          image: postgres:15-alpine
+          image: my-postgres:latest
+          imagePullPolicy: Never
           ports:
             - containerPort: 5432
           env:
